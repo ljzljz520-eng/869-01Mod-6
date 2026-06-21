@@ -274,10 +274,181 @@
         }
     };
 
+    const scriptApiTracker = (() => {
+        const callLog = new Map();
+        const fieldMap = {
+            'navigator.userAgent': 'User-Agent',
+            'navigator.language': '浏览器语言',
+            'navigator.languages': '浏览器语言列表',
+            'navigator.platform': '操作系统平台',
+            'navigator.vendor': '浏览器厂商',
+            'navigator.cookieEnabled': 'Cookie状态',
+            'navigator.doNotTrack': '请勿追踪',
+            'navigator.hardwareConcurrency': 'CPU核心数',
+            'navigator.deviceMemory': '设备内存',
+            'navigator.maxTouchPoints': '触控点数',
+            'navigator.connection': '网络连接信息',
+            'navigator.getBattery': '电池状态',
+            'navigator.bluetooth': '蓝牙信息',
+            'navigator.usb': 'USB设备',
+            'navigator.serial': '串口信息',
+            'navigator.geolocation.getCurrentPosition': '地理位置',
+            'navigator.geolocation.watchPosition': '地理位置追踪',
+            'navigator.credentials.get': '凭证信息',
+            'navigator.mediaDevices.getUserMedia': '摄像头/麦克风',
+            'navigator.clipboard.readText': '剪贴板读取',
+            'document.cookie': 'Cookie数据',
+            'document.referrer': '来源页面',
+            'document.domain': '页面域名',
+            'document.title': '页面标题',
+            'localStorage': '本地存储',
+            'sessionStorage': '会话存储',
+            'indexedDB': '索引数据库',
+            'location.href': '页面URL',
+            'location.hostname': '页面域名',
+            'location.pathname': '页面路径',
+            'location.search': 'URL查询参数',
+            'screen.width': '屏幕宽度',
+            'screen.height': '屏幕高度',
+            'screen.colorDepth': '屏幕色深',
+            'window.innerWidth': '窗口宽度',
+            'window.innerHeight': '窗口高度',
+            'window.devicePixelRatio': '设备像素比',
+            'performance.timing': '性能计时',
+            'performance.navigation': '导航信息',
+            'CanvasRenderingContext2D.getImageData': 'Canvas指纹',
+            'WebGLRenderingContext.getParameter': 'WebGL指纹',
+            'WebGLRenderingContext.getSupportedExtensions': 'WebGL扩展',
+            'AudioContext.createAnalyser': '音频指纹',
+            'RTCPeerConnection': 'WebRTC本地IP'
+        };
+
+        const trackAccess = (key, scriptSrc) => {
+            const hash = simpleHash(scriptSrc);
+            if (!callLog.has(hash)) {
+                callLog.set(hash, new Set());
+            }
+            const field = fieldMap[key] || key;
+            callLog.get(hash).add(field);
+        };
+
+        const getFieldsForScript = (scriptSrc) => {
+            const hash = simpleHash(scriptSrc);
+            const fields = callLog.get(hash);
+            if (!fields) return [];
+            const base = ['页面URL', '访问时间'];
+            return [...base, ...Array.from(fields)];
+        };
+
+        const setupProxy = () => {
+            const currentScriptSrc = document.currentScript?.src || '';
+
+            const wrapProperty = (obj, prop, displayName) => {
+                try {
+                    const desc = Object.getOwnPropertyDescriptor(obj, prop);
+                    if (!desc || desc.get === undefined) return;
+
+                    const originalGet = desc.get;
+                    Object.defineProperty(obj, prop, {
+                        get() {
+                            const err = new Error();
+                            const stack = err.stack || '';
+                            const scriptMatch = stack.match(/https?:\/\/[^\s)]+/g);
+                            const callingScript = scriptMatch?.find(s => s !== location.href) || currentScriptSrc;
+
+                            if (callingScript) {
+                                trackAccess(displayName, callingScript);
+                            }
+                            return originalGet.call(this);
+                        },
+                        configurable: true
+                    });
+                } catch (e) { }
+            };
+
+            const wrapMethod = (obj, method, displayName) => {
+                try {
+                    const original = obj[method];
+                    if (!original || typeof original !== 'function') return;
+                    obj[method] = function (...args) {
+                        const err = new Error();
+                        const stack = err.stack || '';
+                        const scriptMatch = stack.match(/https?:\/\/[^\s)]+/g);
+                        const callingScript = scriptMatch?.find(s => s !== location.href) || currentScriptSrc;
+
+                        if (callingScript) {
+                            trackAccess(displayName, callingScript);
+                        }
+                        return original.apply(this, args);
+                    };
+                } catch (e) { }
+            };
+
+            if (typeof navigator !== 'undefined') {
+                wrapProperty(navigator, 'userAgent', 'navigator.userAgent');
+                wrapProperty(navigator, 'language', 'navigator.language');
+                wrapProperty(navigator, 'platform', 'navigator.platform');
+                wrapProperty(navigator, 'cookieEnabled', 'navigator.cookieEnabled');
+                wrapProperty(navigator, 'hardwareConcurrency', 'navigator.hardwareConcurrency');
+                wrapProperty(navigator, 'deviceMemory', 'navigator.deviceMemory');
+
+                if (navigator.geolocation) {
+                    wrapMethod(navigator.geolocation, 'getCurrentPosition', 'navigator.geolocation.getCurrentPosition');
+                    wrapMethod(navigator.geolocation, 'watchPosition', 'navigator.geolocation.watchPosition');
+                }
+            }
+
+            if (typeof document !== 'undefined') {
+                wrapProperty(document, 'cookie', 'document.cookie');
+                wrapProperty(document, 'referrer', 'document.referrer');
+            }
+
+            if (typeof location !== 'undefined') {
+                wrapProperty(location, 'href', 'location.href');
+                wrapProperty(location, 'search', 'location.search');
+            }
+
+            if (window.localStorage) {
+                wrapMethod(localStorage, 'getItem', 'localStorage');
+                wrapMethod(localStorage, 'setItem', 'localStorage');
+            }
+            if (window.sessionStorage) {
+                wrapMethod(sessionStorage, 'getItem', 'sessionStorage');
+                wrapMethod(sessionStorage, 'setItem', 'sessionStorage');
+            }
+
+            if (window.HTMLCanvasElement) {
+                const origGetImageData = CanvasRenderingContext2D.prototype.getImageData;
+                CanvasRenderingContext2D.prototype.getImageData = function (...args) {
+                    const err = new Error();
+                    const stack = err.stack || '';
+                    const scriptMatch = stack.match(/https?:\/\/[^\s)]+/g);
+                    const callingScript = scriptMatch?.find(s => s !== location.href) || currentScriptSrc;
+                    if (callingScript) trackAccess('CanvasRenderingContext2D.getImageData', callingScript);
+                    return origGetImageData.apply(this, args);
+                };
+            }
+        };
+
+        return { setupProxy, getFieldsForScript };
+    })();
+
+    scriptApiTracker.setupProxy();
+
+    const getConsentTimestamp = () => {
+        try {
+            const state = window.__CMP_STATE__ || JSON.parse(localStorage.getItem('sp_cmp_consent') || 'null');
+            return state?.granted ? state.timestamp : null;
+        } catch (e) {
+            return null;
+        }
+    };
+
     const detectThirdPartyScripts = () => {
         const scripts = document.querySelectorAll('script[src]');
         const currentDomain = location.hostname;
         const detections = [];
+        const consentTs = getConsentTimestamp();
 
         const knownPatterns = {
             ad_pixel: [
@@ -293,12 +464,6 @@
                 /baidu.*tongji/i, /hm\.baidu/i, /51\.la/i,
                 /cnzz/i, /umeng/i, /mixpanel/i, /amplitude/i
             ]
-        };
-
-        const riskKeywords = {
-            high: ['device', 'fingerprint', 'canvas', 'webgl', 'font', 'audio', 'battery', 'network'],
-            medium: ['cookie', 'localstorage', 'session', 'location', 'geolocation'],
-            low: ['pageview', 'event', 'timing', 'duration']
         };
 
         scripts.forEach(script => {
@@ -318,15 +483,27 @@
                 }
 
                 let loadTime = 0;
+                let scriptStartTime = 0;
                 let startAfterConsent = false;
+
                 const perfEntries = performance.getEntriesByName(src);
                 if (perfEntries.length > 0) {
                     const perf = perfEntries[0];
                     loadTime = Math.round(perf.duration * 10) / 10 || 0;
-                    startAfterConsent = perf.startTime > 2000;
+                    scriptStartTime = performance.timeOrigin + perf.startTime;
                 }
 
-                const collectFields = detectCollectFields(scriptType, src, riskKeywords);
+                if (consentTs && scriptStartTime > 0) {
+                    startAfterConsent = scriptStartTime >= consentTs;
+                } else if (consentTs) {
+                    startAfterConsent = false;
+                }
+
+                const apiFields = scriptApiTracker.getFieldsForScript(src);
+
+                const collectFields = apiFields.length > 2
+                    ? apiFields
+                    : ['页面URL', '访问时间'];
 
                 const hash = simpleHash(src);
 
@@ -347,41 +524,6 @@
         return detections;
     };
 
-    const detectCollectFields = (scriptType, src, riskKeywords) => {
-        const fields = [];
-
-        fields.push('页面URL');
-        fields.push('访问时间');
-        fields.push('User-Agent');
-
-        if (scriptType === 'analytics') {
-            fields.push('页面停留时间');
-            fields.push('点击事件');
-            fields.push('跳出率');
-            fields.push('来源页面');
-        } else if (scriptType === 'ad_pixel') {
-            fields.push('广告曝光');
-            fields.push('点击转化');
-            fields.push('设备指纹');
-            fields.push('跨站追踪');
-        } else if (scriptType === 'customer_service') {
-            fields.push('访客信息');
-            fields.push('聊天记录');
-            fields.push('访问轨迹');
-            fields.push('联系方式');
-        }
-
-        const srcLower = src.toLowerCase();
-        if (srcLower.includes('location') || srcLower.includes('geo')) {
-            fields.push('地理位置');
-        }
-        if (srcLower.includes('device') || srcLower.includes('fingerprint')) {
-            fields.push('设备指纹');
-        }
-
-        return [...new Set(fields)];
-    };
-
     const simpleHash = (str) => {
         let hash = 0;
         for (let i = 0; i < str.length; i++) {
@@ -392,8 +534,15 @@
         return 'det_' + Math.abs(hash).toString(16);
     };
 
+    const reportedHashes = new Set();
+
     const reportScriptDetections = async (detections) => {
         if (!detections || detections.length === 0) return;
+
+        const newDetections = detections.filter(d => !reportedHashes.has(d.script_hash + '_' + d.page_url));
+        if (newDetections.length === 0) return;
+
+        newDetections.forEach(d => reportedHashes.add(d.script_hash + '_' + d.page_url));
 
         const visitorId = sessionStorage.getItem('visitor_id') || 0;
 
@@ -403,7 +552,7 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     visitor_id: visitorId,
-                    scripts: detections
+                    scripts: newDetections
                 })
             });
         } catch (err) {
@@ -419,15 +568,28 @@
                 reportScriptDetections(detections);
             }
 
+            window.addEventListener('sp:consent-change', () => {
+                setTimeout(() => {
+                    const updated = detectThirdPartyScripts();
+                    console.log('同意状态变化，重新检测:', updated);
+                    reportScriptDetections(updated);
+                }, 500);
+            });
+
             const observer = new MutationObserver((mutations) => {
                 mutations.forEach((mutation) => {
                     mutation.addedNodes.forEach((node) => {
                         if (node.nodeType === 1 && node.tagName === 'SCRIPT' && node.src) {
-                            const newDetections = detectThirdPartyScripts();
-                            const newScript = newDetections.find(d => d.script_url === node.src);
-                            if (newScript) {
-                                console.log('新检测到脚本:', newScript);
-                                reportScriptDetections([newScript]);
+                            const hash = simpleHash(node.src);
+                            if (!reportedHashes.has(hash + '_' + location.href)) {
+                                setTimeout(() => {
+                                    const newDetections = detectThirdPartyScripts();
+                                    const newScript = newDetections.find(d => d.script_url === node.src);
+                                    if (newScript) {
+                                        console.log('新检测到脚本:', newScript);
+                                        reportScriptDetections([newScript]);
+                                    }
+                                }, 2000);
                             }
                         }
                     });

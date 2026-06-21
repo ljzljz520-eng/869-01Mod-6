@@ -127,7 +127,72 @@
 
     </main>
 
-    <!-- Scripts -->
+    <div id="cmp-banner"
+        class="fixed bottom-0 left-0 right-0 bg-slate-800 border-t border-white/10 p-4 md:p-5 z-50 hidden">
+        <div class="container mx-auto max-w-5xl flex flex-col md:flex-row items-start md:items-center gap-4">
+            <div class="flex-1">
+                <div class="flex items-center gap-2 mb-1">
+                    <i class="ri-cookie-line text-yellow-400 text-xl"></i>
+                    <span class="font-bold text-white">Cookie 与隐私同意</span>
+                </div>
+                <p class="text-slate-300 text-sm">
+                    我们使用 Cookie 和第三方脚本进行网站性能分析、用户体验优化及广告投放。您可以选择同意或拒绝。同意后相关脚本才会激活。
+                </p>
+            </div>
+            <div class="flex gap-2 shrink-0">
+                <button id="cmp-reject"
+                    class="px-4 py-2 bg-slate-700 text-slate-200 rounded-lg hover:bg-slate-600 transition text-sm font-medium">
+                    仅必要
+                </button>
+                <button id="cmp-accept"
+                    class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm font-medium">
+                    全部同意
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <link href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css" rel="stylesheet">
+
+    <script>
+        (function () {
+            const CMP_KEY = 'sp_cmp_consent';
+            const banner = document.getElementById('cmp-banner');
+            const acceptBtn = document.getElementById('cmp-accept');
+            const rejectBtn = document.getElementById('cmp-reject');
+
+            const getConsent = () => {
+                try {
+                    return JSON.parse(localStorage.getItem(CMP_KEY));
+                } catch (e) {
+                    return null;
+                }
+            };
+
+            const setConsent = (granted) => {
+                const data = {
+                    granted: granted,
+                    timestamp: Date.now(),
+                    timestamp_iso: new Date().toISOString()
+                };
+                localStorage.setItem(CMP_KEY, JSON.stringify(data));
+                window.dispatchEvent(new CustomEvent('sp:consent-change', { detail: data }));
+                banner.classList.add('hidden');
+                return data;
+            };
+
+            const consent = getConsent();
+            if (!consent) {
+                banner.classList.remove('hidden');
+            }
+
+            acceptBtn?.addEventListener('click', () => setConsent(true));
+            rejectBtn?.addEventListener('click', () => setConsent(false));
+
+            window.__CMP_STATE__ = consent;
+        })();
+    </script>
+
     <script src="js/collector.js"></script>
     <script src="js/speedtest.js"></script>
 </body>

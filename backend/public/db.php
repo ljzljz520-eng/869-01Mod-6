@@ -93,9 +93,14 @@ class Database
             start_after_consent INTEGER DEFAULT 0,
             collect_fields TEXT,
             page_url TEXT,
+            monitor_status TEXT DEFAULT 'pre_check',
             detected_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )";
         self::$pdo->exec($sql3);
+
+        try {
+            self::$pdo->exec("ALTER TABLE script_detections ADD COLUMN monitor_status TEXT DEFAULT 'pre_check'");
+        } catch (Exception $e) { }
 
         // 检查是否需要插入演示数据
         $count = self::$pdo->query("SELECT COUNT(*) FROM visitors")->fetchColumn();
@@ -230,10 +235,10 @@ class Database
 
         $detStmt = self::$pdo->prepare("INSERT INTO script_detections (
             visitor_id, script_id, script_url, script_hash, load_time,
-            start_after_consent, collect_fields, page_url, detected_at
+            start_after_consent, collect_fields, page_url, monitor_status, detected_at
         ) VALUES (
             :visitor_id, :script_id, :script_url, :script_hash, :load_time,
-            :start_after_consent, :collect_fields, :page_url, :detected_at
+            :start_after_consent, :collect_fields, :page_url, :monitor_status, :detected_at
         )");
 
         $detections = [
@@ -244,8 +249,9 @@ class Database
                 ':script_hash' => 'hash_google_analytics_001',
                 ':load_time' => 45.2,
                 ':start_after_consent' => 1,
-                ':collect_fields' => json_encode(['页面URL', '停留时间']),
+                ':collect_fields' => json_encode(['页面URL', 'User-Agent', '浏览器语言', '本地存储']),
                 ':page_url' => 'https://example.com/',
+                ':monitor_status' => 'formal',
                 ':detected_at' => date('Y-m-d H:i:s', strtotime('-1 hour'))
             ],
             [
@@ -255,8 +261,9 @@ class Database
                 ':script_hash' => 'hash_adpixel_004',
                 ':load_time' => 128.5,
                 ':start_after_consent' => 0,
-                ':collect_fields' => json_encode(['浏览行为', '设备指纹']),
+                ':collect_fields' => json_encode(['页面URL', 'Cookie数据', 'Canvas指纹', 'WebGL指纹']),
                 ':page_url' => 'https://example.com/',
+                ':monitor_status' => 'pre_check',
                 ':detected_at' => date('Y-m-d H:i:s', strtotime('-1 hour'))
             ],
             [
@@ -266,8 +273,9 @@ class Database
                 ':script_hash' => 'hash_baidu_tongji_002',
                 ':load_time' => 62.8,
                 ':start_after_consent' => 0,
-                ':collect_fields' => json_encode(['页面访问', '点击热力图']),
+                ':collect_fields' => json_encode(['页面URL', '来源页面', '屏幕宽度', '屏幕高度']),
                 ':page_url' => 'https://example.com/product',
+                ':monitor_status' => 'pre_check',
                 ':detected_at' => date('Y-m-d H:i:s', strtotime('-2 hours'))
             ]
         ];

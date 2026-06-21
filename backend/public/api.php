@@ -208,8 +208,10 @@ try {
                 $existing = $checkStmt->fetch();
 
                 $scriptId = null;
+                $scriptStatus = 'pending';
                 if ($existing) {
                     $scriptId = $existing['id'];
+                    $scriptStatus = $existing['status'];
                 } else {
                     $riskLevel = 'medium';
                     if ($scriptType === 'ad_pixel') {
@@ -240,12 +242,16 @@ try {
                     $scriptId = $pdo->lastInsertId();
                 }
 
+                $monitorStatus = in_array($scriptStatus, ['approved', 'observed']) ? 'formal' : 'pre_check';
+
                 $detStmt = $pdo->prepare("INSERT INTO script_detections (
                     visitor_id, script_id, script_url, script_hash,
-                    load_time, start_after_consent, collect_fields, page_url
+                    load_time, start_after_consent, collect_fields, page_url,
+                    monitor_status
                 ) VALUES (
                     :visitor_id, :script_id, :script_url, :script_hash,
-                    :load_time, :start_after_consent, :collect_fields, :page_url
+                    :load_time, :start_after_consent, :collect_fields, :page_url,
+                    :monitor_status
                 )");
                 $detStmt->execute([
                     ':visitor_id' => $visitorId,
@@ -255,7 +261,8 @@ try {
                     ':load_time' => $loadTime,
                     ':start_after_consent' => $startAfterConsent,
                     ':collect_fields' => $collectFields,
-                    ':page_url' => $pageUrl
+                    ':page_url' => $pageUrl,
+                    ':monitor_status' => $monitorStatus
                 ]);
                 $inserted++;
             }
@@ -301,9 +308,15 @@ try {
                 } else {
                     $item['collect_fields'] = [];
                 }
-                $detCountStmt = $pdo->prepare("SELECT COUNT(*) FROM script_detections WHERE script_id = :id");
-                $detCountStmt->execute([':id' => $item['id']]);
-                $item['detection_count'] = $detCountStmt->fetchColumn();
+                $formalStmt = $pdo->prepare("SELECT COUNT(*) FROM script_detections WHERE script_id = :id AND monitor_status = 'formal'");
+                $formalStmt->execute([':id' => $item['id']]);
+                $item['formal_count'] = $formalStmt->fetchColumn();
+
+                $preCheckStmt = $pdo->prepare("SELECT COUNT(*) FROM script_detections WHERE script_id = :id AND monitor_status = 'pre_check'");
+                $preCheckStmt->execute([':id' => $item['id']]);
+                $item['precheck_count'] = $preCheckStmt->fetchColumn();
+
+                $item['detection_count'] = $item['formal_count'];
             }
 
             echo json_encode([
@@ -406,9 +419,13 @@ try {
             $highRiskStmt = $pdo->query("SELECT COUNT(*) FROM third_party_scripts WHERE risk_level IN ('high', 'critical') AND status != 'disabled'");
             $highRisk = $highRiskStmt->fetchColumn();
 
-            $todayStmt = $pdo->prepare("SELECT COUNT(*) FROM script_detections WHERE DATE(detected_at) = :today");
+            $todayStmt = $pdo->prepare("SELECT COUNT(*) FROM script_detections WHERE DATE(detected_at) = :today AND monitor_status = 'formal'");
             $todayStmt->execute([':today' => date('Y-m-d')]);
             $todayDetections = $todayStmt->fetchColumn();
+
+            $todayPrecheckStmt = $pdo->prepare("SELECT COUNT(*) FROM script_detections WHERE DATE(detected_at) = :today AND monitor_status = 'pre_check'");
+            $todayPrecheckStmt->execute([':today' => date('Y-m-d')]);
+            $todayPrecheck = $todayPrecheckStmt->fetchColumn();
 
             echo json_encode([
                 'status' => 'success',
@@ -418,7 +435,8 @@ try {
                 'observed' => $observed,
                 'disabled' => $disabled,
                 'high_risk' => $highRisk,
-                'today_detections' => $todayDetections
+                'today_detections' => $todayDetections,
+                'today_precheck' => $todayPrecheck
             ]);
             break;
 

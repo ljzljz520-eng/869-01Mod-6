@@ -86,6 +86,18 @@
                 </div>
             </div>
 
+            <div class="bg-blue-50 border-l-4 border-blue-500 p-4 mb-6 rounded-r-lg flex items-start">
+                <i class="ri-information-line text-blue-500 text-xl mr-3 mt-0.5"></i>
+                <div class="flex-1 text-sm">
+                    <p class="text-blue-800 font-medium">真实行为检测机制</p>
+                    <ul class="text-blue-700 mt-1 space-y-0.5 list-disc list-inside">
+                        <li><b>同意后启动</b>：基于真实 CMP 同意事件时间戳与脚本实际加载时间对比判断，非时间阈值估算</li>
+                        <li><b>收集字段</b>：通过 Proxy 包装隐私敏感 API（navigator、document.cookie、localStorage、Canvas/WebGL 等），根据脚本真实调用记录生成</li>
+                        <li><b>监测状态</b>：待审核脚本仅生成"预检测"记录，状态变更为已备案/观察中后才进入"正式"监测</li>
+                    </ul>
+                </div>
+            </div>
+
             <div class="flex flex-col md:flex-row justify-between items-center mb-6 space-y-4 md:space-y-0">
                 <div class="flex flex-wrap gap-3 items-center w-full md:w-auto">
                     <div class="relative flex-1 md:w-64">
@@ -178,8 +190,15 @@
                                         {{ getRiskLabel(item.risk_level) }}
                                     </span>
                                 </td>
-                                <td class="px-6 py-4 text-gray-600">
-                                    {{ item.detection_count }} 次
+                                <td class="px-6 py-4">
+                                    <div class="text-green-600 font-medium text-sm">
+                                        {{ item.formal_count }} 次
+                                        <span class="text-xs text-gray-400 font-normal">正式</span>
+                                    </div>
+                                    <div v-if="item.precheck_count > 0" class="text-orange-500 text-xs mt-0.5">
+                                        <i class="ri-alert-line mr-0.5"></i>
+                                        {{ item.precheck_count }} 次预检测
+                                    </div>
                                 </td>
                                 <td class="px-6 py-4 text-sm text-gray-500">
                                     {{ item.created_at }}
@@ -296,6 +315,7 @@
                                 <table class="w-full text-sm">
                                     <thead class="bg-gray-50">
                                         <tr class="text-gray-600 text-xs">
+                                            <th class="px-4 py-2 text-left">监测状态</th>
                                             <th class="px-4 py-2 text-left">访客 IP</th>
                                             <th class="px-4 py-2 text-left">加载耗时</th>
                                             <th class="px-4 py-2 text-left">同意后启动</th>
@@ -303,7 +323,18 @@
                                         </tr>
                                     </thead>
                                     <tbody class="divide-y divide-gray-100">
-                                        <tr v-for="det in detections" :key="det.id" class="hover:bg-gray-50">
+                                        <tr v-for="det in detections" :key="det.id"
+                                            :class="det.monitor_status === 'pre_check' ? 'bg-orange-50/60 hover:bg-orange-50' : 'hover:bg-gray-50'">
+                                            <td class="px-4 py-2">
+                                                <span v-if="det.monitor_status === 'formal'"
+                                                    class="px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700">
+                                                    <i class="ri-shield-check-line mr-0.5"></i>正式
+                                                </span>
+                                                <span v-else
+                                                    class="px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-700">
+                                                    <i class="ri-alert-line mr-0.5"></i>预检测
+                                                </span>
+                                            </td>
                                             <td class="px-4 py-2 text-gray-800">{{ det.ip || '-' }}</td>
                                             <td class="px-4 py-2 text-gray-600">{{ det.load_time }} ms</td>
                                             <td class="px-4 py-2">
@@ -314,7 +345,7 @@
                                             <td class="px-4 py-2 text-gray-500 text-xs">{{ det.detected_at }}</td>
                                         </tr>
                                         <tr v-if="detections.length === 0">
-                                            <td colspan="4" class="px-4 py-6 text-center text-gray-400">暂无检测记录
+                                            <td colspan="5" class="px-4 py-6 text-center text-gray-400">暂无检测记录
                                             </td>
                                         </tr>
                                     </tbody>
